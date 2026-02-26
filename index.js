@@ -1,41 +1,44 @@
-import express from "express"
-import fetch from "node-fetch"
-import cors from "cors"
+import express from "express";
+import { fetch } from "undici";
+import cors from "cors";
 
-const app = express()
+const app = express();
+app.use(cors());
+app.use(express.json());
 
-app.use(cors())
-app.use(express.json())
-
-const SUPABASE_URL = "https://japrxgqsdstohjbujbxw.supabase.co"
+// Your Supabase project URL
+const SUPABASE_URL = "https://japrxgqsdstohjbujbxw.supabase.co";
 
 app.use("*", async (req, res) => {
   try {
-    const url = SUPABASE_URL + req.originalUrl
+    const url = SUPABASE_URL + req.originalUrl;
 
     const response = await fetch(url, {
       method: req.method,
       headers: {
-        "apikey": req.headers.apikey,
-        "authorization": req.headers.authorization,
+        // Only forward necessary headers
+        apikey: req.headers.apikey,
+        authorization: req.headers.authorization,
         "content-type": "application/json"
       },
-      body: ["GET", "HEAD"].includes(req.method)
-        ? undefined
-        : JSON.stringify(req.body)
-    })
+      body: ["GET", "HEAD"].includes(req.method) ? undefined : JSON.stringify(req.body)
+    });
 
-    const data = await response.text()
+    const data = await response.text();
 
-    res.status(response.status).send(data)
+    res.status(response.status);
 
+    // forward minimal headers
+    res.setHeader("content-type", "application/json");
+
+    res.send(data);
   } catch (error) {
-    console.error("Proxy error:", error)
-    res.status(500).json({ error: "Proxy failed", details: error.message })
+    console.error("Proxy error:", error);
+    res.status(500).json({ error: "Proxy failed", details: error.message });
   }
-})
+});
 
-const PORT = process.env.PORT || 3000
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Proxy running on port ${PORT}`)
-})
+  console.log(`Proxy running on port ${PORT}`);
+});
