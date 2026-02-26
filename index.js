@@ -4,12 +4,12 @@ import cors from "cors";
 
 const app = express();
 
-// Enhanced CORS configuration
+// CORS configuration
 app.use(cors({
   origin: true,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'apikey', 'x-client-info', 'x-supabase-auth', 'X-Client-Info']
+  allowedHeaders: ['Content-Type', 'Authorization', 'apikey']
 }));
 
 app.use(express.json());
@@ -20,81 +20,58 @@ const SUPABASE_URL = "https://japrxgqsdstohjbujbxw.supabase.co";
 // Debug endpoint to check headers
 app.get("/debug-headers", (req, res) => {
   res.json({
-    headers: req.headers,
-    hasAuthorization: !!req.headers.authorization,
-    hasApikey: !!req.headers.apikey,
-    authHeaderPresent: req.headers.authorization ? 'Yes' : 'No',
-    apikeyPresent: req.headers.apikey ? 'Yes' : 'No',
-    authHeaderStart: req.headers.authorization ? req.headers.authorization.substring(0, 20) + '...' : null,
-    method: req.method,
-    url: req.originalUrl,
+    headers: {
+      authorization: req.headers.authoruration ? 'Present' : 'Missing',
+      authorization_length: req.headers.authorization ? req.headers.authorization.length : 0,
+      apikey: req.headers.apikey ? 'Present' : 'Missing',
+      authorization_preview: req.headers.authorization ? req.headers.authorization.substring(0, 30) + '...' : null
+    },
     timestamp: new Date().toISOString()
   });
 });
 
-// Health check endpoint
+// Health check
 app.get("/health", (req, res) => {
-  res.json({ 
-    status: "OK", 
-    message: "Supabase proxy is running",
-    timestamp: new Date().toISOString()
-  });
+  res.json({ status: "OK", message: "Proxy is running" });
 });
 
 // Handle all requests
 app.use("*", async (req, res) => {
-  // Set CORS headers for all responses
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, apikey, x-client-info, x-supabase-auth');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-
-  // Handle preflight requests
+  // Handle preflight
   if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, apikey');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
     return res.status(200).end();
   }
 
   try {
-    // Construct the full Supabase URL
     const url = SUPABASE_URL + req.originalUrl;
-    console.log(`\n[${new Date().toISOString()}] Proxying ${req.method} request to: ${url}`);
     
-    // Log headers for debugging
-    console.log('Request Headers:', {
-      authorization: req.headers.authorization ? 'Present' : 'Missing',
-      apikey: req.headers.apikey ? 'Present' : 'Missing',
-      contentType: req.headers['content-type']
-    });
-
-    // Prepare headers to forward - THIS IS CRITICAL FOR RLS
+    // CRITICAL: Forward headers EXACTLY as received - NO MODIFICATION
     const headers = {};
     
-    // Forward authentication headers (these make RLS work)
-    if (req.headers.authorization) {
-      headers.authorization = req.headers.authorization;
-      headers.Authorization = req.headers.authorization; // Send both cases
-      console.log('✅ Forwarding Authorization header');
-    } else {
-      console.log('⚠️ No Authorization header received from client');
-    }
-    
+    // Forward apikey exactly as received
     if (req.headers.apikey) {
       headers.apikey = req.headers.apikey;
-      headers.apikey = req.headers.apikey;
-      console.log('✅ Forwarding apikey header');
+    }
+    
+    // CRITICAL FIX: Forward Authorization header EXACTLY as received
+    // Do NOT modify it, do NOT add "Bearer" if not present, do NOT change case
+    if (req.headers.authorization) {
+      // Use exactly what the client sent - this is crucial
+      headers.authorization = req.headers.authorization;
+      
+      // Log for debugging (but don't log full token)
+      console.log('Authorization header present, length:', req.headers.authorization.length);
+      console.log('Starts with:', req.headers.authorization.substring(0, 15) + '...');
+    } else {
+      console.log('No Authorization header received');
     }
     
     // Always set content type
     headers['content-type'] = req.headers['content-type'] || 'application/json';
-    
-    // Forward Supabase specific headers
-    if (req.headers['x-client-info']) {
-      headers['x-client-info'] = req.headers['x-client-info'];
-    }
-    
-    if (req.headers['x-supabase-auth']) {
-      headers['x-supabase-auth'] = req.headers['x-supabase-auth'];
-    }
 
     // Prepare request options
     const requestOptions = {
@@ -106,47 +83,28 @@ app.use("*", async (req, res) => {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
       if (req.body && Object.keys(req.body).length > 0) {
         requestOptions.body = JSON.stringify(req.body);
-        console.log('Request body:', JSON.stringify(req.body).substring(0, 200));
       }
     }
 
     // Make the request to Supabase
-    console.log('Forwarding to Supabase...');
     const response = await fetch(url, requestOptions);
 
     // Get response data
     const data = await response.text();
     
-    console.log(`Supabase response status: ${response.status}`);
-
     // Set response status
     res.status(response.status);
 
-    // Forward important headers from Supabase
-    const headersToForward = [
-      'content-type',
-      'content-range',
-      'range',
-      'cache-control',
-      'x-ratelimit-limit',
-      'x-ratelimit-remaining',
-      'x-ratelimit-reset'
-    ];
-    
-    headersToForward.forEach(headerName => {
-      const headerValue = response.headers.get(headerName);
-      if (headerValue) {
-        res.setHeader(headerName, headerValue);
-      }
-    });
+    // Set CORS headers
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('content-type', response.headers.get('content-type') || 'application/json');
 
     // Send response
     res.send(data);
     
-    console.log(`✅ Request completed with status ${response.status}`);
-    
   } catch (error) {
-    console.error("❌ Proxy error:", error);
+    console.error("Proxy error:", error);
     res.status(500).json({ 
       error: "Proxy failed", 
       details: error.message,
@@ -157,13 +115,5 @@ app.use("*", async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log('\n=================================');
-  console.log('🚀 Supabase Proxy Server Started');
-  console.log('=================================');
-  console.log(`📡 Port: ${PORT}`);
-  console.log(`🔗 Proxy URL: http://localhost:${PORT}`);
-  console.log(`🎯 Target Supabase: ${SUPABASE_URL}`);
-  console.log(`🏥 Health check: http://localhost:${PORT}/health`);
-  console.log(`🔍 Debug endpoint: http://localhost:${PORT}/debug-headers`);
-  console.log('=================================\n');
+  console.log(`Proxy running on port ${PORT}`);
 });
