@@ -3,10 +3,10 @@
     "version": "1.0.0",
     "type": "module",
     "description": "Supabase proxy server for Render",
-    "main": "server.js",
+    "main": "index.js",
     "scripts": {
-      "start": "node server.js",
-      "dev": "nodemon server.js"
+      "start": "node index.js",
+      "dev": "nodemon index.js"
     },
     "dependencies": {
       "express": "^4.18.2",
