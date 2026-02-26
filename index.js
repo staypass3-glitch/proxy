@@ -16,8 +16,9 @@ app.use("*", async (req, res) => {
     const response = await fetch(url, {
       method: req.method,
       headers: {
-        ...req.headers,
-        host: undefined
+        "apikey": req.headers.apikey,
+        "authorization": req.headers.authorization,
+        "content-type": "application/json"
       },
       body: ["GET", "HEAD"].includes(req.method)
         ? undefined
@@ -26,14 +27,7 @@ app.use("*", async (req, res) => {
 
     const data = await response.text()
 
-    res.status(response.status)
-
-    // forward headers
-    response.headers.forEach((value, key) => {
-      res.setHeader(key, value)
-    })
-
-    res.send(data)
+    res.status(response.status).send(data)
 
   } catch (error) {
     console.error("Proxy error:", error)
